@@ -133,7 +133,7 @@ hyir is **not** a programming language for templates (there are no loops, condit
 ## Installation
 
 ```bash
-git clone https://github.com/valkyrieAttr/hyir.git --depth 1
+git clone https://github.com/valkyrieAttr/HyIR.git --depth 1
 cd hyir
 mkdir -p ~/.local/bin
 install -m 0755 hyir.sh ~/.local/bin/hyir.sh
