@@ -198,10 +198,6 @@ For each run, hyir does the following:
 
 With `--proc N`, steps 2 to 7 are spread across N worker processes. Templates that resolve to the same target are always handled by the same worker, in order.
 
-## Template reference
-
-> Coming from an earlier version? Placeholder and header syntax changed; see [MIGRATION.md](MIGRATION.md).
-
 ### Header
 
 ```text
