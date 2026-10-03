@@ -49,7 +49,6 @@ Run it again with the same inputs and the file is left untouched.
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
-- [Template reference](#template-reference)
 - [Command-line reference](#command-line-reference)
 - [Recipes](#recipes)
 - [Security model](#security-model)
@@ -81,6 +80,7 @@ Keeping many config files consistent (one palette used by a dozen apps, an appli
 - **Required variables**: `$REQUIRE:{A,B}` validates up front and reports every missing name at once.
 - **Inline mode**: `--header` renders a template given on the command line or on stdin, no file needed.
 - **Directory scanning**: recursive discovery of `*.dcol` and `*.theme` files in natural sort order.
+- **Positional targets**: `--target` pairs each template with an output path given on the command line, by position — no `$PATH` header required.
 
 ### Hooks
 
@@ -133,7 +133,7 @@ hyir is **not** a programming language for templates (there are no loops, condit
 ## Installation
 
 ```bash
-git clone https://github.com/valkyrieAttr/HyIR.git --depth 1
+git clone https://github.com/valkyrieAttr/hyir.git --depth 1
 cd hyir
 mkdir -p ~/.local/bin
 install -m 0755 hyir.sh ~/.local/bin/hyir.sh
@@ -188,7 +188,7 @@ Successful runs are silent by default. Drop `NAME` and the fallback applies (`He
 
 For each run, hyir does the following:
 
-1. **Discover.** Every path you pass is either a template file or a directory. Directories are scanned recursively for `*.dcol` and `*.theme` files (both extensions are treated identically). All templates are sorted together in *natural* order: case-insensitive, with numbers compared numerically, so `9-base.dcol` is processed before `10-overrides.dcol`. The order of arguments on the command line does not matter.
+1. **Discover.** Every path you pass is either a template file or a directory. Directories are scanned recursively for `*.dcol` and `*.theme` files (both extensions are treated identically). All templates are sorted together in *natural* order: case-insensitive, with numbers compared numerically, so `9-base.dcol` is processed before `10-overrides.dcol`. The order of arguments on the command line does not matter — unless `--target` is in use, which processes templates in exactly the order given (see [Pairing templates with a positional target](#pairing-templates-with-a-positional-target)).
 2. **Parse the header.** `$PATH`, `$REQUIRE`, `$PRE` and `$RUN` are read from the top of each template. A template with no `$PATH` has no target and is skipped.
 3. **Run `$PRE`** (only if allowed). The hook runs in a subshell and whatever it *exports* becomes available to placeholders.
 4. **Check `$REQUIRE`.** If any required variable is missing, the template is skipped: nothing is written and no `$RUN` hook fires.
@@ -275,12 +275,13 @@ Built-ins are computed once per template, so repeated references within a file a
 
 ### Color helper
 
-If a variable holds a color as `#RGB`, `#RRGGBB`, `rgb(r,g,b)` or `rgba(r,g,b,a)`, hyir derives a companion `NAME_rgba` automatically. The argument in parentheses is the **alpha** channel:
+If a variable holds a color as `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb(r,g,b)` or `rgba(r,g,b,a)`, hyir derives a companion `NAME_rgba` automatically. Called with no arguments it uses the alpha already in the value (`1` if the input had none); the argument in parentheses overrides that alpha:
 
-| Placeholder (with `ACCENT=#ff8800`) | Result |
-| --- | --- |
-| `[::ACCENT_rgba::]` | `rgba(255,136,0,1)` |
-| `[::ACCENT_rgba(0.25)::]` | `rgba(255,136,0,0.25)` |
+| Placeholder | Example value | Result |
+| --- | --- | --- |
+| `[::ACCENT_rgba::]` | `ACCENT=#ff8800` | `rgba(255,136,0,1)` |
+| `[::ACCENT_rgba(0.25)::]` | `ACCENT=#ff8800` | `rgba(255,136,0,0.25)` |
+| `[::TINT_rgba::]` | `TINT=#ff880080` | `rgba(255,136,0,0.502)` |
 
 ### Includes
 
@@ -293,7 +294,7 @@ hyir.sh [FLAGS] [--] <template-or-directory> [<template-or-directory> ...]
 ```
 
 > [!IMPORTANT]
-> **Flags must come before template paths.** Parsing stops at the first argument that is not a flag, and everything after it is treated as a path. The list-style flags (`--file`, `--env`, `--ignore-templates`, `--header`) consume every following argument until the next flag or `--`, so end them with `--`:
+> **Flags must come before template paths.** Parsing stops at the first argument that is not a flag, and everything after it is treated as a path. The list-style flags (`--file`, `--target`, `--env`, `--ignore-templates`, `--header`) consume every following argument until the next flag or `--`, so end them with `--`:
 >
 > ```bash
 > hyir.sh --env S:values.env --allow-run -- templates/ extra/one-off.dcol
@@ -304,6 +305,8 @@ hyir.sh [FLAGS] [--] <template-or-directory> [<template-or-directory> ...]
 | Flag | Description |
 | --- | --- |
 | `--file PATH...` | Template files or directories to process. Equivalent to positional paths; repeatable. Files named explicitly are used whatever their extension. |
+| `--target PATH...` | Pair each `--file`/positional template with an output path by position, overriding its `$PATH`. See [Pairing templates with a positional target](#pairing-templates-with-a-positional-target). |
+| `--truncate` | With a mismatched `--target` count, use only the first N pairs instead of erroring. |
 | `--ignore-templates NAME...` | File names (not paths) to skip during directory scans. Repeatable. |
 | `--header FIELD...` | Override header fields or supply an inline template (see below). |
 | `-h`, `--help` | Show the built-in help and exit. |
@@ -317,6 +320,24 @@ hyir.sh [FLAGS] [--] <template-or-directory> [<template-or-directory> ...]
 | `R:<hook>` | Force `$RUN` for every template in the run. |
 | `B:<text>` | Add an inline template whose body is `<text>`. The escapes `\n`, `\t`, `\r`, `\0` and `\\` are interpreted. |
 | `B:-` | Read the inline body from stdin. |
+
+### Pairing templates with a positional target
+
+`--target` assigns each template's output path from the command line instead of (or in the absence of) a `$PATH` header:
+
+```bash
+hyir.sh --target out/a.conf out/b.conf --file a.dcol b.dcol --
+```
+
+- **Paired by position, not by name.** The Nth `--target` goes with the Nth `--file`/positional template, in the order given — not sorted, not matched by filename.
+- **A single `--target` broadcasts** to every template in the run.
+- **A target ending in `/` (or an existing directory)** is treated as a directory: the template is written into it as `<source-basename>`, with a trailing `.dcol`/`.theme` stripped. Any other value is used as the exact output path.
+- **Works even on a template with no header at all.** `--target` can give a plain text file an output path without it declaring `$PATH`, `$REQUIRE`, `$PRE` or `$RUN`. Header tags the file *does* have still apply as normal; only `$PATH` is overridden.
+- **Precedence**: `--target` (per-file) beats `--header T:` (global) beats the template's own `$PATH:` tag.
+- **Every paired entry must be a plain file.** A directory among `--file`/positional args is rejected when `--target` is used, since a directory's contents and order aren't something a positional list can pin down.
+- **Mismatched counts are an error** unless you pass `--truncate`, which keeps only the first N pairs and warns.
+- **Disables natural-sort ordering.** With `--target`, templates are processed in exactly the order given on the command line. If two paired templates resolve to the same output path, the one given *last on the command line* wins — not the one that would sort last.
+- Like `--file` and `--env`, `--target` is a list-style flag: it consumes every following bare argument until the next flag or `--`, so end it with `--` before your template paths.
 
 ### Environment
 
@@ -501,6 +522,21 @@ Or read the body from stdin:
 printf 'from stdin: [::NAME::]\n' | hyir.sh --env E:NAME=Ada --header T:/tmp/stdin.txt B:-
 ```
 
+### Give plain files an output path from the command line
+
+Skip the header entirely when a file needs no `$REQUIRE`, `$PRE` or `$RUN` — `--target` supplies `$PATH` positionally, even for a file with no header at all:
+
+```bash
+hyir.sh --target ~/.config/app/a.conf ~/.config/app/b.conf --file snippets/a.txt snippets/b.txt --
+```
+
+A single target broadcasts to every file, and a directory target (trailing `/`, or an existing directory) writes each one in under its own basename:
+
+```bash
+mkdir -p ~/.config/app
+hyir.sh --target ~/.config/app/ --file snippets/*.txt --
+```
+
 ### Strict, parallel CI run
 
 ```bash
@@ -561,7 +597,7 @@ Things worth knowing before you rely on hyir:
 - **A failed `$PRE` hook does not stop rendering.** The template is still rendered, with anything the hook would have provided left unresolved, unless `$REQUIRE` catches the missing variables. The run exits with status 1 either way. Use `$REQUIRE` for anything mandatory.
 - **Dry runs print only with `--allow-debug`**, and `$PRE` hooks still execute during a dry run.
 - **Fallbacks apply to unset variables**, not empty ones. `$REQUIRE` also accepts an empty value.
-- **Same target, last writer wins.** When several templates resolve to one target, the last in natural sort order is the one you get.
+- **Same target, last writer wins.** When several templates resolve to one target, the last one processed wins — natural sort order normally, or exact command-line order when `--target` is in use.
 - **Inline bodies** (`--header B:`) interpret `\n`, `\t`, `\r`, `\0` and `\\`, and a body read from stdin loses its trailing newline.
 
 ## Troubleshooting
@@ -577,6 +613,7 @@ Things worth knowing before you rely on hyir:
 | `Timeout acquiring lock ...` | Another hyir process is writing the same target, or a lock was abandoned. Raise `--lock-timeout`, or lower `--lock-stale-after` so abandoned locks are reclaimed sooner. |
 | `Cannot create locks dir ...` | The runtime directory is missing or unwritable (common on macOS and minimal containers). Set `HYIR_RUNTIME_DIR` to a writable directory. |
 | `hyir.sh must not be run as root` | Run it as a regular user. |
+| `--target count (N) doesn't match --file count (M)` | Pass the same number of `--target` values as templates, pass exactly one to broadcast, or add `--truncate` to use only the first matching pairs. |
 | A directory literally named `~` appeared | `~` is not expanded in `$PATH`. Use `[::HOME::]`. |
 | `--audit-log` or `--manifest` produced no file | Their parent directory must already exist. |
 | A hidden temporary file sits next to a target | Left behind by an interrupted run. It is safe to delete. |
