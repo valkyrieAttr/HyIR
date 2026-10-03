@@ -47,13 +47,29 @@ PLACEHOLDER SYNTAX:
 
 
 FLAGS:
-  --env [S:path|E:VAR=val..]         Load extra environment before rendering:
+  --env   [S:path|E:VAR=val..]       Load extra environment before rendering:
                                         S:<path>   source a file (repeatable)
                                         E:VAR=val  set one variable (repeatable)
 
   --proc              [N|auto]       Worker processes to use. 'auto' (or 0) detects the
   --file              [path..]       One or more template files or directories to scan
                                      (recursively, for *.dcol/*.theme). Repeatable.
+
+  --target            [path..]       One target per --file entry, paired by position (NOT
+                                     sorted, NOT name-matched) -- the 1st --target pairs with
+                                     the 1st --file, the 2nd with the 2nd, and so on. Every
+                                     --file entry must be a plain file when --target is used
+                                     (a directory's contents/order aren't under your direct
+                                     control, so positional pairing against one isn't safe).
+                                     A target ending in '/' (or an existing directory) is
+                                     treated as a directory: the file is written into it as
+                                     <source-basename-without-.dcol/.theme>. Any other target
+                                     is used as the exact output path. A single --target
+                                     applies to every --file (broadcast). Overrides that
+                                     file's own \$PATH: header tag; \$PRE/\$RUN/\$REQUIRE still
+                                     come from the file itself. Mismatched counts (neither
+                                     equal nor a single broadcast target) are an error unless
+                                     --truncate is also given.
 
   --header            [T:P:R:B = V]  Override header fields instead of reading a file:
                                         T:<target>   override/force \$PATH
@@ -87,56 +103,60 @@ FLAGS:
   --secret-pattern    [regex]        Env var NAME pattern treated as sensitive for --audit-log redaction. 
                                      Default covers SECRET/PASSWORD/TOKEN/API_KEY/PRIVATE_KEY/CREDENTIAL/*_PAT.
 
-  --audit-log         [path]        Append a JSON-lines record of every PRE/RUN hook
-                                    execution (secret values redacted).
+  --audit-log         [path]         Append a JSON-lines record of every PRE/RUN hook
+                                     execution (secret values redacted).
 
-  --manifest          [path]        Append a JSON-lines record (target, source, sha256) for
-                                    every file actually written.
+  --manifest          [path]         Append a JSON-lines record (target, source, sha256) for
+                                     every file actually written.
 
-  --stats-json        [path]        Write a one-line JSON run summary on exit.
+  --stats-json        [path]         Write a one-line JSON run summary on exit.
 
 
-  --allow-pre                       Allow \$PRE hooks to run (disabled by default).
-  --allow-run                       Allow \$RUN hooks to run (disabled by default).
+  --allow-pre                        Allow \$PRE hooks to run (disabled by default).
+  --allow-run                        Allow \$RUN hooks to run (disabled by default).
 
-  --dont-run                        Force RUN hooks off, overriding --allow-run/env
-                                    even if set elsewhere. Always wins.
+  --dont-run                         Force RUN hooks off, overriding --allow-run/env
+                                     even if set elsewhere. Always wins.
 
-  --pre-scan                        Run every unique \$PRE hook once, up front, before
-                                    forking workers, instead of per-template. Requires
-                                    --allow-pre. Strongly recommended whenever --proc > 1
-                                    and your PRE hooks are not idempotent.
+  --truncate                         With --target, silently use only the first N pairs
+                                     (N = the shorter of the two lists) instead of erroring
+                                     on a count mismatch.
 
-  --fail-fast                       Stop taking on new work as soon as any template, PRE
-                                    hook, or RUN hook fails, instead of finishing the batch
-                                    and reporting failures at the end.
+  --pre-scan                         Run every unique \$PRE hook once, up front, before
+                                     forking workers, instead of per-template. Requires
+                                     --allow-pre. Strongly recommended whenever --proc > 1
+                                     and your PRE hooks are not idempotent.
 
-  --allow-warn                      Treat things that are normally a warning (an unbound
-                                    variable, an untagged header target, unrecognized
-                                    header content) as a hard error instead.
+  --fail-fast                        Stop taking on new work as soon as any template, PRE
+                                     hook, or RUN hook fails, instead of finishing the batch
+                                     and reporting failures at the end.
 
-  --ignore-unbound                  Leave unbound placeholders as literal text with no
-                                    warning at all. Overridden by --allow-warn.
+  --allow-warn                       Treat things that are normally a warning (an unbound
+                                     variable, an untagged header target, unrecognized
+                                     header content) as a hard error instead.
 
-  --disable-fallback                Reject any use of :- fallback syntax as an error.
-  --allow-dry-run                   Report what would change/run without writing anything
-                                    or executing any RUN hook.
+  --ignore-unbound                   Leave unbound placeholders as literal text with no
+                                     warning at all. Overridden by --allow-warn.
 
-  --allow-debug                     Print a line for every hook run and file written/skipped.
-  --defer-run                       Queue all RUN hooks until every template has been
-                                    rendered, then run them (subject to --run-concurrency).
+  --disable-fallback                 Reject any use of :- fallback syntax as an error.
+  --allow-dry-run                    Report what would change/run without writing anything
+                                     or executing any RUN hook.
 
-  --no-atomic                       Write target files directly instead of via a temp file +
-                                    atomic rename. Faster, but a crash mid-write can leave a
-                                    partial file.
+  --allow-debug                      Print a line for every hook run and file written/skipped.
+  --defer-run                        Queue all RUN hooks until every template has been
+                                     rendered, then run them (subject to --run-concurrency).
 
-  --sanitize-env-full               Trim all leading/trailing whitespace from every
-                                    environment variable after a PRE hook changes the
-                                    environment (the pre-1.x default). Off by default because
-                                    it silently mangles intentionally-padded values; only a
-                                    trailing \\r is stripped unconditionally.
+  --no-atomic                        Write target files directly instead of via a temp file +
+                                     atomic rename. Faster, but a crash mid-write can leave a
+                                     partial file.
 
-  --help                            Show this help and exit.
+  --sanitize-env-full                Trim all leading/trailing whitespace from every
+                                     environment variable after a PRE hook changes the
+                                     environment (the pre-1.x default). Off by default because
+                                     it silently mangles intentionally-padded values; only a
+                                     trailing \\r is stripped unconditionally.
+
+  --help                             Show this help and exit.
 
 ENVIRONMENT:
   Every flag above has a HYIR_* environment variable equivalent (e.g.
@@ -163,7 +183,9 @@ export HYIR_HOOK_TIMEOUT="${HYIR_HOOK_TIMEOUT:-0}"
 export HYIR_HOOK_RETRIES="${HYIR_HOOK_RETRIES:-0}"
 
 TEMPLATE_FILES=()
+TARGET_LIST=()
 FORCE_NO_RUN=0
+TRUNCATE_TARGETS=0
 
 die_arg() {
     printf "@[diagnostic:error:arg(true)]: %s\n" "$1" >&2
@@ -184,6 +206,18 @@ while [[ $# -gt 0 ]]; do
             shift
         done
         continue
+        ;;
+    --target)
+        shift
+        if [[ -z "${1:-}" ]]; then die_arg "--target requires at least one path"; fi
+        while [[ $# -gt 0 && "$1" != "--" && "$1" != -* ]]; do
+            TARGET_LIST+=("$1")
+            shift
+        done
+        continue
+        ;;
+    --truncate)
+        TRUNCATE_TARGETS=1
         ;;
     --ignore-templates)
         shift
@@ -371,6 +405,12 @@ if [[ ${#TEMPLATE_FILES[@]} -gt 0 ]]; then
     export HYIR_TEMPLATE_FILE="${joined%"$SEP"}"
 fi
 
+if [[ ${#TARGET_LIST[@]} -gt 0 ]]; then
+    joined_targets="$(printf "%s${SEP}" "${TARGET_LIST[@]}")"
+    export HYIR_TARGET_LIST="${joined_targets%"$SEP"}"
+    [[ "$TRUNCATE_TARGETS" == "1" ]] && export HYIR_TRUNCATE_TARGETS=1
+fi
+
 if [[ -z "${HYIR_TEMPLATE_FILE:-}" && -z "${HYIR_HEADER_BUFFER:-}" ]]; then
     printf "@[arg:no_arg]: No valid file or directory paths given. %s --help for more information\n" "$SCRIPT_NAME"
     exit 1
@@ -389,6 +429,18 @@ use Errno       qw(EEXIST);
 use IO::Handle;
 use POSIX        qw(strftime);
 use MIME::Base64 qw(encode_base64);
+
+# A bare `die "msg\n"` exits with whatever $! (errno) happens to be set to
+# at the time -- leftover from some earlier, unrelated syscall -- rather
+# than a code anyone chose. For an argument/CLI validation error, that
+# should reliably be exit 2, matching the bash launcher's own die_arg(),
+# so callers can rely on the Exit codes table instead of an incidental
+# errno value that can differ by call site or platform.
+sub die_arg {
+    my ($msg) = @_;
+    print STDERR $msg;
+    exit 2;
+}
 
 my $HAVE_SHA
     ; # lazily probed only if --manifest is actually used (Digest::SHA costs real startup time to load)
@@ -411,8 +463,10 @@ sub _sha256_hex {
 }
 
 my ( $LIB_DIR, $NPROC, $SCRIPT_NAME, $HOME_DIR );
-my ( %REPLACE, %RGBA_BASE, %SKIP_SET, %made_dirs, @template_source,
-    @INPUT_PATH, @files, %pids );
+my (%REPLACE,   %RGBA_BASE,       %SKIP_SET,
+    %made_dirs, @template_source, @INPUT_PATH,
+    @files,     %pids,            %EXTERNAL_TARGET
+);
 my ($raw,        $nl,         $header,      $body,
     $target,     $pre_script, $post_script, $post_is_run,
     $target_dir, $existing,   $found,       $n,
@@ -492,8 +546,9 @@ my $SECRET_PATTERN_STR = $ENV{HYIR_SECRET_PATTERN}
     // '(?:SECRET|PASSWORD|PASSWD|TOKEN|API_KEY|APIKEY|PRIVATE_KEY|CREDENTIAL|_PAT$)';
 my $SECRET_PATTERN;
 eval { $SECRET_PATTERN = qr/$SECRET_PATTERN_STR/i; 1 }
-    or die
-    "@[diagnostic:error(true)]: --secret-pattern is not a valid regular expression: $SECRET_PATTERN_STR\n";
+    or die_arg(
+    "@[diagnostic:error:arg(true)]: --secret-pattern is not a valid regular expression: $SECRET_PATTERN_STR\n"
+    );
 
 for my $path (@INPUT_PATH) {
     if ( -f $path ) {
@@ -509,6 +564,58 @@ unless ( @files || @template_source || $ENV{HYIR_HEADER_BUFFER} ) {
     print
         "@[arg:no_arg]: No valid file or directory paths given. $SCRIPT_NAME --help for more information\n";
     exit(1);
+}
+
+# ---------------------------------------------------------------------------
+# --target: pair each --file entry with a target by POSITION -- not sorted,
+# not name-matched. This has to run before the natural sort further down
+# (which would otherwise reorder @files and silently break the pairing)
+# and before find() populates anything from @template_source (a directory's
+# contents and order aren't under the caller's direct control, so pairing
+# against one positionally isn't safe -- it's rejected outright below).
+# ---------------------------------------------------------------------------
+my @TARGET_LIST = split /\Q$SEP\E/, ( $ENV{HYIR_TARGET_LIST} // '' );
+my $TRUNCATE_TARGETS  = _flag_true( $ENV{HYIR_TRUNCATE_TARGETS} );
+my $USING_TARGET_LIST = @TARGET_LIST ? 1 : 0;
+
+if ($USING_TARGET_LIST) {
+    die_arg(
+        "@[diagnostic:error:arg(true)]: --target cannot be combined with --header B: (there's one buffer, not a list to pair against)\n"
+    ) if defined $ENV{HYIR_HEADER_BUFFER};
+    die_arg(
+        "@[diagnostic:error:arg(true)]: --target requires every --file entry to be a plain file, not a directory: "
+            . join( ', ', @template_source )
+            . "\n"
+    ) if @template_source;
+
+    my $nf = scalar @files;
+    my $nt = scalar @TARGET_LIST;
+
+    if ( $nt != 1 && $nt != $nf ) {
+        my $keep = $nf < $nt ? $nf : $nt;
+        die_arg(
+            "@[diagnostic:error:arg(true)]: --target count ($nt) doesn't match --file count ($nf) and isn't 1 (which would broadcast to every file); pass --truncate to use only the first $keep pair(s) instead of erroring\n"
+        ) unless $TRUNCATE_TARGETS;
+        warn
+            "@[diagnostic:warn(true)]: --target count ($nt) doesn't match --file count ($nf); --truncate is keeping only the first $keep pair(s)\n";
+        $#files       = $keep - 1;
+        $#TARGET_LIST = $keep - 1;
+        ( $nf, $nt ) = ( $keep, $keep );
+    }
+
+    for my $i ( 0 .. $nf - 1 ) {
+        my $file   = $files[$i];
+        my $target = $nt == 1 ? $TARGET_LIST[0] : $TARGET_LIST[$i];
+        my $resolved;
+        if ( $target =~ m{/$} || -d $target ) {
+            ( my $base = basename($file) ) =~ s/\.(dcol|theme)$//i;
+            $resolved = File::Spec->catfile( $target, $base );
+        }
+        else {
+            $resolved = $target;
+        }
+        $EXTERNAL_TARGET{$file} = $resolved;
+    }
 }
 
 if ( $> == 0 ) {
@@ -629,24 +736,30 @@ sanitize_env();
 # Color parsing
 #
 # Accepts #RGB, #RGBA, #RRGGBB, #RRGGBBAA (leading # optional on all of
-# these), and rgb()/rgba() function forms. Returns the "rgba(r,g,b," prefix
-# used by the <name_rgba(...)> / [::name_rgba(...)::] placeholder form (the
-# caller appends whatever the user wrote in the parens plus a closing
-# paren), or undef if the value isn't a recognizable color.
+# these), and rgb()/rgba() function forms. Returns a two-element list: the
+# "rgba(r,g,b," prefix used by the <name_rgba(...)> / [::name_rgba(...)::]
+# placeholder form (the caller appends whatever the user wrote in the
+# parens, or the default alpha below when nothing was written, plus a
+# closing paren) -- always ending in a bare comma, regardless of input
+# form -- and the default alpha to use when the placeholder is given no
+# explicit args: the alpha embedded in the input itself for #RGBA,
+# #RRGGBBAA and rgba(r,g,b,a), or "1" when the input had no alpha
+# component at all. Returns an empty list if the value isn't a
+# recognizable color.
 # ---------------------------------------------------------------------------
 sub parse_color_to_rgba_base {
     my ($v) = @_;
-    return undef unless defined $v && length $v;
+    return () unless defined $v && length $v;
 
     if ( $v =~ /^#?([0-9A-Fa-f]{3})$/ ) {
         my ( $r, $g, $b ) = map { hex( $_ . $_ ) } split //, $1;
-        return sprintf( 'rgba(%d,%d,%d,', $r, $g, $b );
+        return ( sprintf( 'rgba(%d,%d,%d,', $r, $g, $b ), '1' );
     }
     if ( $v =~ /^#?([0-9A-Fa-f]{4})$/ ) {
         my @n = split //, $1;
         my ( $r, $g, $b, $a ) = map { hex( $_ . $_ ) } @n;
-        return sprintf( 'rgba(%d,%d,%d,%s',
-            $r, $g, $b, _fmt_alpha( $a / 255 ) );
+        return ( sprintf( 'rgba(%d,%d,%d,', $r, $g, $b ),
+            _fmt_alpha( $a / 255 ) );
     }
     if ( $v =~ /^#?([0-9A-Fa-f]{6})$/ ) {
         my $h = $1;
@@ -655,7 +768,7 @@ sub parse_color_to_rgba_base {
             hex( substr( $h, 2, 2 ) ),
             hex( substr( $h, 4, 2 ) )
         );
-        return sprintf( 'rgba(%d,%d,%d,', $r, $g, $b );
+        return ( sprintf( 'rgba(%d,%d,%d,', $r, $g, $b ), '1' );
     }
     if ( $v =~ /^#?([0-9A-Fa-f]{8})$/ ) {
         my $h = $1;
@@ -665,16 +778,17 @@ sub parse_color_to_rgba_base {
             hex( substr( $h, 4, 2 ) ),
             hex( substr( $h, 6, 2 ) )
         );
-        return sprintf( 'rgba(%d,%d,%d,%s',
-            $r, $g, $b, _fmt_alpha( $a / 255 ) );
+        return ( sprintf( 'rgba(%d,%d,%d,', $r, $g, $b ),
+            _fmt_alpha( $a / 255 ) );
     }
     if ( $v
-        =~ /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*[\d.]+\s*)?\)$/
+        =~ /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/
         )
     {
-        return sprintf( 'rgba(%s,%s,%s,', $1, $2, $3 );
+        return ( sprintf( 'rgba(%s,%s,%s,', $1, $2, $3 ),
+            defined $4 ? $4 : '1' );
     }
-    return undef;
+    return ();
 }
 
 sub _fmt_alpha {
@@ -699,11 +813,11 @@ sub build_env_cache {
             next;
         }
 
-        my $base = parse_color_to_rgba_base($v);
+        my ( $base, $default_alpha ) = parse_color_to_rgba_base($v);
         if ( defined $base ) {
             my $rgba_key = $k . '_rgba';
             $RGBA_BASE{$rgba_key} = $base;
-            $REPLACE{$rgba_key}   = "${base}1)";
+            $REPLACE{$rgba_key}   = "${base}${default_alpha})";
         }
 
         $REPLACE{$k} = $v;
@@ -728,7 +842,6 @@ sub fnv1a_hex {
     return sprintf( '%08x', $hash );
 }
 
-# ---------------------------------------------------------------------------
 # Locking
 #
 # mkdir() is the primitive because it's atomic on every filesystem this
@@ -760,7 +873,7 @@ sub fnv1a_hex {
 # of being the same number: a lock holder that's legitimately still
 # working shouldn't get its lock yanked out from under it just because
 # a *different* process's patience ran out at the same instant.
-# ---------------------------------------------------------------------------
+
 sub acquire_lock {
     my ($target_path) = @_;
     my $hash          = fnv1a_hex($target_path);
@@ -1386,9 +1499,8 @@ sub _replace_new {
 sub check_require {
     my ( $require_str, $template_file ) = @_;
     return 1 unless defined $require_str && length $require_str;
-    my @names
-        = grep {length}
-        map    { my $s = $_; $s =~ s/^\s+|\s+$//g; $s } split /,/,
+    my @names = grep {length}
+        map { my $s = $_; $s =~ s/^\s+|\s+$//g; $s } split /,/,
         $require_str;
     my @missing = grep { !exists $REPLACE{$_} } @names;
     return 1 unless @missing;
@@ -1428,8 +1540,14 @@ sub _redact {
  # value exists anywhere in %ENV, so there's nothing yet to substring-
  # match against -- the value would otherwise reach the audit log in
  # plain text on the one run that matters most (the secret's origin).
-    $text
-        =~ s/(\b[A-Za-z_][A-Za-z0-9_]*)(=)(\S+)/$1 =~ $SECRET_PATTERN ? "$1$2***REDACTED***" : "$1$2$3"/ge;
+    $text =~ s/(\b[A-Za-z_][A-Za-z0-9_]*)(=)(\S+)/do {
+        # Capture into lexicals before testing: a successful match against
+        # $SECRET_PATTERN (which has no capture groups of its own) resets
+        # $1, $2 and $3 to undef, so testing $1 directly here would blank
+        # out the very name and value this substitution is trying to keep.
+        my ( $name, $eq, $val ) = ( $1, $2, $3 );
+        $name =~ $SECRET_PATTERN ? "$name$eq***REDACTED***" : "$name$eq$val";
+    }/ge;
 
     return $text;
 }
@@ -1627,10 +1745,18 @@ sub check_disable_fallback {
 }
 
 # Resolve a header-derived directive value against the --header CLI
-# overrides, which always win when present.
+# overrides and any --target pairing, in that priority order (most
+# specific wins): --target (per-file) > --header T: (global) > the
+# file's own $PATH: tag.
 sub apply_header_overrides {
-    my ($d) = @_;
-    if ( defined $ENV{HYIR_HEADER_TARGET} ) {
+    my ( $d, $template_file ) = @_;
+    if ( defined $template_file
+        && exists $EXTERNAL_TARGET{$template_file} )
+    {
+        $d->{path}        = $EXTERNAL_TARGET{$template_file};
+        $d->{path_braced} = 0;
+    }
+    elsif ( defined $ENV{HYIR_HEADER_TARGET} ) {
         $d->{path}        = $ENV{HYIR_HEADER_TARGET};
         $d->{path_braced} = 0;
     }
@@ -1657,7 +1783,7 @@ sub resolve_targets_only {
         return () unless defined $raw;
         my ( $header, undef ) = split_header_body($raw);
         my $d = parse_directives( $header, $template_file );
-        apply_header_overrides($d);
+        apply_header_overrides( $d, $template_file );
         return () unless defined $d->{path} && length $d->{path};
 
         reset_builtins_for_file( $template_file, $index, $total );
@@ -1691,7 +1817,7 @@ sub process_template {
     $body = $raw
         if $d->{no_header}
         ;   # header candidate wasn't actually a header; it's all body
-    apply_header_overrides($d);
+    apply_header_overrides( $d, $template_file );
 
     reset_builtins_for_file( $template_file, $index, $total );
 
@@ -2087,10 +2213,6 @@ sub execute_post_script_background {
         if $SPIT_DEBUG;
 }
 
-# ---------------------------------------------------------------------------
-# File discovery (unchanged natural sort: case-insensitive, numeric runs
-# compared as numbers so "file2" sorts before "file10").
-# ---------------------------------------------------------------------------
 find(
     {   wanted => sub {
             return
@@ -2126,7 +2248,9 @@ unless ( $found || defined $ENV{HYIR_HEADER_BUFFER} ) {
     }
     map {
     [ $_, [ map { /^\d+$/ ? $_ : lc($_) } split /(\d+)/, $_ ] ]
-    } @files;
+    } @files
+    unless $USING_TARGET_LIST
+    ; # --target pairs by position; sorting here would silently break that pairing
 
 if ( defined $ENV{HYIR_HEADER_BUFFER} ) {
     push @files, '::BUFFER::';
@@ -2164,7 +2288,7 @@ if ($ALLOW_PRE_SCAN) {
         next unless defined $raw;
         my ( $header, undef ) = split_header_body($raw);
         my $d = parse_directives( $header, $f );
-        apply_header_overrides($d);
+        apply_header_overrides( $d, $f );
         next unless defined $d->{pre} && length $d->{pre};
 
         reset_builtins_for_file( $f, $idx, $n );
@@ -2232,9 +2356,22 @@ sub compute_work_units {
         }
     }
 
-    my %members;
+# Group indices by union-find root, but track roots in the order
+# their *earliest* (lowest-index) member first appears -- NOT via
+# `keys %members`. Hash key iteration order is randomized per-process
+# in Perl (by design, to resist hash-flooding), so using it here would
+# mean two independent, non-colliding files could still get processed
+# in an unpredictable relative order despite there being no collision
+# between them at all -- quietly undermining the one guarantee this
+# whole mechanism exists to provide. Iterating indices 0..n-1 in order
+# and recording each new root the first time it's seen fixes that: a
+# singleton keeps its original file-order position, and a collision
+# group takes the position of whichever of its members sorts first.
+    my ( %members, @root_order, %seen_root );
     for my $i ( 0 .. $n - 1 ) {
-        push @{ $members{ $find->($i) } }, $i;
+        my $root = $find->($i);
+        push @{ $members{$root} }, $i;
+        push @root_order,          $root unless $seen_root{$root}++;
     }
 
     my $collisions = grep { @$_ > 1 } values %members;
@@ -2246,7 +2383,7 @@ sub compute_work_units {
     return [
         map {
             [ sort { $a <=> $b } @{ $members{$_} } ]
-        } keys %members
+        } @root_order
     ];
 }
 
